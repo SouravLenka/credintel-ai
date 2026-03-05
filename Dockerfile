@@ -8,9 +8,11 @@ RUN apt-get update && apt-get install -y \
     poppler-utils tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
+ENV PIP_NO_CACHE_DIR=1
+
 # Install Python dependencies
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
 # Copy backend code
 COPY backend/ .
