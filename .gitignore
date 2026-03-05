@@ -1,0 +1,52 @@
+# ─── Python ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+dist/
+
+# ─── Secrets & API Keys (NEVER commit these) ─────────────
+.env
+.env.*
+!.env.example          # allow the example template only
+*.env.local
+*.env.production
+*.env.staging
+
+# Specific secret files
+backend/.env
+frontend/.env.local
+firebase-credentials.json
+*credentials*.json
+*secret*.json
+*service-account*.json
+
+# ─── Data directories (large / ephemeral) ────────────────
+backend/data/
+data/
+chroma_db/
+uploads/
+
+# ─── Node / Next.js ──────────────────────────────────────
+frontend/node_modules/
+node_modules/
+frontend/.next/
+.next/
+frontend/out/
+out/
+
+# ─── Docker ──────────────────────────────────────────────
+*.tar
+
+# ─── IDE ─────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ─── Logs ────────────────────────────────────────────────
+*.log
+logs/
