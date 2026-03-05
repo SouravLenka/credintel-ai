@@ -1,7 +1,7 @@
 [build]
 builder = "dockerfile"
-dockerfile = "deployment/Dockerfile"
-dockerfilePath = "deployment/Dockerfile"
+dockerfile = "Dockerfile"
+dockerfilePath = "Dockerfile"
 buildContext = "."
 
 [deploy]
