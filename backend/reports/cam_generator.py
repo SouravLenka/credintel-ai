@@ -67,16 +67,18 @@ class CAMGenerator:
         score: dict,
         signals: dict | None,
     ) -> dict[str, Any]:
-        risk_cat = score.get("risk_category", "N/A")
-        overall = score.get("overall_credit_score", 0)
-        recommendation = self._get_recommendation(risk_cat, overall)
-
+        risk_cat = score.get("loan_decision", "N/A")
+        overall = score.get("credit_score", 0)
+        
+        # New weighted breakdown
+        breakdown = score.get("score_breakdown", {})
+        
         return {
             "company_name": company_name,
             "date": datetime.now().strftime("%B %d, %Y"),
             "risk_category": risk_cat,
             "overall_score": overall,
-            "recommendation": recommendation,
+            "recommendation": self._get_recommendation(risk_cat, overall),
             # Sections
             "borrower_overview": (
                 f"{company_name} is the borrowing entity under review. "
@@ -86,26 +88,23 @@ class CAMGenerator:
             "financial_analysis": self._format_financial(score, signals),
             "promoter_background": research.get("promoter_summary", "N/A"),
             "risk_analysis": self._format_risk(score, research),
-            "credit_recommendation": recommendation,
-            "risk_alerts": score.get("risk_alerts", []),
-            "indian_intel": score.get("indian_intel", {}),
-            "explanation": score.get("explanation", []),
-            # Scores
-            "character_score": score.get("character_score", 0),
-            "capacity_score": score.get("capacity_score", 0),
-            "capital_score": score.get("capital_score", 0),
-            "collateral_score": score.get("collateral_score", 0),
-            "conditions_score": score.get("conditions_score", 0),
-            "risk_flags": research.get("risk_flags", []),
+            "credit_recommendation": self._get_recommendation(risk_cat, overall),
+            "risk_flags": score.get("risk_flags", []),
+            "financial_metrics": score.get("financial_metrics", {}),
+            # New Five C weighting attributes
+            "financial_strength": breakdown.get("financial_strength", 0),
+            "bank_behavior": breakdown.get("bank_behavior", 0),
+            "tax_compliance": breakdown.get("tax_compliance", 0),
+            "credit_bureau": breakdown.get("credit_bureau", 0),
+            "qualitative": breakdown.get("qualitative", 0),
         }
 
     def _format_financial(self, score: dict, signals: dict | None) -> str:
-        parts = [f"Overall Credit Score: {score.get('overall_credit_score', 0):.1f}/100"]
-        if score.get("score_breakdown", {}).get("ratios"):
-            ratios = score["score_breakdown"]["ratios"]
-            parts.append(f"  • Debt to Revenue: {ratios.get('debt_to_revenue', 0)*100:.1f}%")
-            parts.append(f"  • Current Ratio: {ratios.get('current_ratio', 0):.2f}")
-            parts.append(f"  • DSCR: {ratios.get('dscr', 0):.2f}")
+        parts = [f"Overall Credit Score: {score.get('credit_score', 0):.1f}/100"]
+        metrics = score.get("financial_metrics", {})
+        if metrics:
+            for k, v in metrics.items():
+                parts.append(f"  • {k}: {v}")
         
         if signals:
             for key, val in signals.items():
@@ -114,51 +113,39 @@ class CAMGenerator:
         return "\n".join(parts)
 
     def _format_risk(self, score: dict, research: dict) -> str:
-        flags = research.get("risk_flags", [])
-        alerts = score.get("risk_alerts", [])
+        flags = score.get("risk_flags", [])
         lines = [
-            f"Character Score: {score.get('character_score', 0):.1f}",
-            f"Capacity Score:  {score.get('capacity_score', 0):.1f}",
-            f"Capital Score:   {score.get('capital_score', 0):.1f}",
-            f"Collateral Score: {score.get('collateral_score', 0):.1f}",
-            f"Conditions Score: {score.get('conditions_score', 0):.1f}",
+            f"Loan Decision: {score.get('loan_decision', 'N/A')}",
+            f"Overall Score: {score.get('credit_score', 0):.1f}",
             "",
-            "Why This Score (AI Explanation):"
+            "Identified Risk Flags:"
         ]
-        lines += [f"  • {e}" for e in score.get("explanation", [])]
-        lines.append("")
-        
-        if alerts:
-            lines.append("CRITICAL RISK ALERTS:")
-            lines += [f"  ⚠ [{a['type'].upper()}] {a['message']}" for a in alerts]
-            lines.append("")
-
-        lines.append("Risk Flags from Research:" if flags else "No major risk flags identified in public records.")
-        lines += [f"  ⚠ {f}" for f in flags]
-        
-        intel = score.get("indian_intel", {})
-        if intel:
-            lines.append("")
-            lines.append("INDIAN FINANCIAL INTELLIGENCE CHECKS:")
-            for k, v in intel.items():
-                lines.append(f"  • {k.replace('_', ' ').title()}: {v}")
+        if flags:
+            lines += [f"  ⚠ {f}" for f in flags]
+        else:
+            lines.append("  No major risk flags identified.")
                 
         return "\n".join(lines)
 
-    def _get_recommendation(self, risk_cat: str, score: float) -> str:
-        if risk_cat == "Low":
+    def _get_recommendation(self, decision: str, score: float) -> str:
+        if decision == "APPROVE":
             return (
                 f"APPROVE — The borrower demonstrates strong creditworthiness with a score of "
-                f"{score:.1f}/100 and Low risk profile. Standard covenants apply."
+                f"{score:.1f}/100. Entity meets all automated validation criteria."
             )
-        elif risk_cat == "Medium":
+        elif decision == "CONDITIONAL APPROVAL":
             return (
                 f"CONDITIONAL APPROVE — Score of {score:.1f}/100 indicates moderate risk. "
-                f"Additional collateral or guarantees recommended. Enhanced monitoring required."
+                f"Enhanced monitoring or additional collateral required."
+            )
+        elif decision == "MANUAL REVIEW":
+            return (
+                f"MANUAL REVIEW — Score of {score:.1f}/100. Automated scoring is inconclusive. "
+                f"Requires manual credit committee inspection."
             )
         return (
-            f"DECLINE / REFER — Score of {score:.1f}/100 indicates High credit risk. "
-            f"Significant red flags present. Refer to senior credit committee for review."
+            f"DECLINE / REJECT — The loan application has been automatically REJECTED. "
+            f"Score: {score:.1f}/100. Critical validation failures or high risk flags detected."
         )
 
     # ── PDF Generator (ReportLab) ─────────────────────────────────────────────
@@ -203,13 +190,13 @@ class CAMGenerator:
 
         # Score Summary Table
         score_data = [
-            ["Five Cs", "Score", "Weight"],
-            ["Character", f"{ctx['character_score']:.1f}", "25%"],
-            ["Capacity", f"{ctx['capacity_score']:.1f}", "30%"],
-            ["Capital", f"{ctx['capital_score']:.1f}", "25%"],
-            ["Collateral", f"{ctx['collateral_score']:.1f}", "10%"],
-            ["Conditions", f"{ctx['conditions_score']:.1f}", "10%"],
-            ["OVERALL", f"{ctx['overall_score']:.1f}", "—"],
+            ["Five Cs Factor", "Score", "Max Weight"],
+            ["Financial Strength", f"{ctx['financial_strength']:.1f}", "30%"],
+            ["Bank behavior", f"{ctx['bank_behavior']:.1f}", "20%"],
+            ["Tax compliance", f"{ctx['tax_compliance']:.1f}", "20%"],
+            ["Credit Bureau", f"{ctx['credit_bureau']:.1f}", "15%"],
+            ["Qualitative Factors", f"{ctx['qualitative']:.1f}", "15%"],
+            ["OVERALL SCORE", f"{ctx['overall_score']:.1f}", "100%"],
         ]
         tbl = Table(score_data, colWidths=[5 * cm, 3 * cm, 2.5 * cm])
         tbl.setStyle(TableStyle([
@@ -228,9 +215,10 @@ class CAMGenerator:
         story.append(Spacer(1, 0.4 * cm))
 
         risk_color = {
-            "Low": colors.green,
-            "Medium": colors.orange,
-            "High": colors.red,
+            "APPROVE": colors.green,
+            "CONDITIONAL APPROVAL": colors.orange,
+            "MANUAL REVIEW": colors.blue,
+            "REJECT": colors.red,
         }.get(ctx["risk_category"], colors.grey)
 
         story.append(Paragraph(
@@ -302,12 +290,12 @@ class CAMGenerator:
         hdr[2].text = "Weight"
 
         rows_data = [
-            ("Character", ctx["character_score"], "25%"),
-            ("Capacity", ctx["capacity_score"], "30%"),
-            ("Capital", ctx["capital_score"], "25%"),
-            ("Collateral", ctx["collateral_score"], "10%"),
-            ("Conditions", ctx["conditions_score"], "10%"),
-            ("OVERALL", ctx["overall_score"], "—"),
+            ("Financial Strength", ctx["financial_strength"], "30%"),
+            ("Bank behavior", ctx["bank_behavior"], "20%"),
+            ("Tax compliance", ctx["tax_compliance"], "20%"),
+            ("Credit Bureau", ctx["credit_bureau"], "15%"),
+            ("Qualitative", ctx["qualitative"], "15%"),
+            ("OVERALL SCORE", ctx["overall_score"], "100%"),
         ]
         for dim, sc, wt in rows_data:
             row = tbl.add_row().cells

@@ -4,37 +4,53 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import Navbar from "@/components/Navbar";
 import Sidebar from "@/components/Sidebar";
-import { analyzeCompany } from "@/lib/api";
+import {
+  runResearch,
+  processDocuments,
+  analyzeCompany,
+  type ResearchResponse,
+} from "@/lib/api";
+import axios from "axios";
 import { Search, Loader2, AlertTriangle, Globe, User, Scale, Newspaper, Building2 } from "lucide-react";
 import toast from "react-hot-toast";
-
-interface Analysis { 
-  research: Record<string, any>; 
-  score: {
-    overall_credit_score: number;
-    risk_category: string;
-    risk_alerts: { type: string; message: string; severity: string }[];
-    explanation: string[];
-    indian_intel: Record<string, string>;
-  }; 
-  analysis_id: string; 
-  company_id: string;
-}
 
 export default function ResearchPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [companyName, setCompanyName] = useState("");
-  const [companyId,   setCompanyId]   = useState("");
+  const [companyId, setCompanyId] = useState("");
   const [searching,   setSearching]   = useState(false);
-  const [analysis,    setAnalysis]    = useState<Analysis | null>(null);
+  const [analysis,    setAnalysis]    = useState<ResearchResponse | null>(null);
   const [loadStep,    setLoadStep]    = useState(0);
 
   useEffect(() => {
     if (!loading && !user) router.push("/");
     setCompanyName(localStorage.getItem("credintel_company_name") || "");
-    setCompanyId(localStorage.getItem("credintel_company_id") || Math.random().toString(36).slice(2, 12));
+    setCompanyId(localStorage.getItem("credintel_company_id") || "");
   }, [user, loading, router]);
+
+  const describeError = (error: unknown): string => {
+    if (!axios.isAxiosError(error)) return "Analysis failed. Unexpected error.";
+    const status = error.response?.status;
+    const detail =
+      (error.response?.data as any)?.detail ||
+      error.response?.statusText ||
+      error.message;
+
+    if (status === 404) {
+      return "Research API missing (404). Restart backend from latest code and verify /api/research in /docs.";
+    }
+    if (status === 401) {
+      return "Unauthorized (401). Check Firebase/auth settings.";
+    }
+    if (status === 422) {
+      return "Invalid request (422). Please check company name input.";
+    }
+    if (status && status >= 500) {
+      return `Backend error (${status}): ${detail}`;
+    }
+    return `Request failed${status ? ` (${status})` : ""}: ${detail}`;
+  };
 
   const loadingSteps = [
     "Initializing research agent...",
@@ -62,16 +78,63 @@ export default function ResearchPage() {
     setSearching(true);
     setAnalysis(null);
     try {
-      const result = await analyzeCompany(companyName, companyId);
-      setAnalysis(result as unknown as Analysis);
+      toast.loading("Running research pipeline...", { id: "process" });
+      let result: ResearchResponse;
+
+      if (companyId) {
+        try {
+          const processResult = await processDocuments(companyId);
+          const analysisId = processResult.analysis_id;
+          if (analysisId) {
+            const legacy = await analyzeCompany(analysisId);
+            localStorage.setItem("credintel_analysis_id", analysisId);
+            localStorage.setItem("credintel_company_id", companyId);
+            localStorage.setItem(
+              "credintel_score_data",
+              JSON.stringify(legacy?.score || legacy || {}),
+            );
+            result = {
+              company: companyName,
+              research: legacy?.research || {
+                company_name: companyName,
+                news_summary: "",
+                promoter_summary: "",
+                sector_summary: "",
+                litigation_summary: "",
+                regulatory_summary: "",
+                risk_flags: [],
+              },
+              risk_flags:
+                legacy?.risk_flags ||
+                legacy?.score?.risk_flags ||
+                legacy?.research?.risk_flags ||
+                [],
+              pipeline: [
+                "Company Name",
+                "Document Processing",
+                "Risk Analysis",
+                "Research Synthesis",
+              ],
+            };
+          } else {
+            result = await runResearch(companyName);
+          }
+        } catch {
+          result = await runResearch(companyName);
+        }
+      } else {
+        result = await runResearch(companyName);
+      }
+
+      setAnalysis(result);
+      
       // Persist for next steps
-      localStorage.setItem("credintel_analysis_id",   result.analysis_id);
-      localStorage.setItem("credintel_company_id",    result.company_id);
       localStorage.setItem("credintel_research_data", JSON.stringify(result.research));
-      localStorage.setItem("credintel_score_data",    JSON.stringify(result.score));
-      toast.success("Research & scoring complete!");
+      localStorage.setItem("credintel_company_name", companyName);
+      toast.success("Research complete!", { id: "process" });
     } catch (e) {
-      toast.error("Analysis failed. Make sure the backend is running.");
+      console.error(e);
+      toast.error(describeError(e), { id: "process" });
     } finally {
       setSearching(false);
     }
@@ -80,7 +143,6 @@ export default function ResearchPage() {
   if (loading || !user) return null;
 
   const research = analysis?.research;
-  const score    = analysis?.score;
 
   return (
     <div className="min-h-screen">
@@ -135,19 +197,18 @@ export default function ResearchPage() {
           {analysis && research && (
             <div className="space-y-6 animate-fade-in">
               {/* WOW Feature: Risk Alerts Panel */}
-              {score?.risk_alerts && score.risk_alerts.length > 0 && (
+              {analysis?.risk_flags && analysis.risk_flags.length > 0 && (
                 <div className="glass-card p-6 border-l-4 border-red-500 bg-red-500/5">
                   <div className="flex items-center gap-2 mb-4">
                     <AlertTriangle className="w-6 h-6 text-red-500" />
                     <h2 className="text-lg font-bold text-red-500">Critical Risk Alerts</h2>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {score.risk_alerts.map((alert, idx) => (
+                    {analysis.risk_flags.map((flag, idx) => (
                       <div key={idx} className="flex gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
                         <div className="w-2 h-2 rounded-full bg-red-500 mt-1.5 flex-shrink-0" />
                         <div>
-                          <p className="text-sm font-semibold text-red-200 uppercase text-[10px] tracking-tight">{alert.type.replace("_", " ")}</p>
-                          <p className="text-sm text-slate-300">{alert.message}</p>
+                          <p className="text-sm text-slate-300">{flag}</p>
                         </div>
                       </div>
                     ))}

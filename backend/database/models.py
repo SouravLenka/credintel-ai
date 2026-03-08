@@ -14,7 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
-from db.database import Base
+from database.db import Base
 
 
 def gen_uuid() -> str:
@@ -74,7 +74,6 @@ class Document(Base):
 
 
 # ─── Company Analysis ────────────────────────────────────────────────────────
-
 class CompanyAnalysis(Base):
     __tablename__ = "company_analyses"
 
@@ -82,18 +81,51 @@ class CompanyAnalysis(Base):
     company_id: str = Column(UUID(as_uuid=False), ForeignKey("companies.id"), nullable=False)
     user_id: str = Column(UUID(as_uuid=False), ForeignKey("users.id"), nullable=False)
 
+    # Base extracted corporate fields
+    cin: Optional[str] = Column(String(50))
+    llpin: Optional[str] = Column(String(50))
+    entity_status: Optional[str] = Column(String(100))
+    incorporation_date: Optional[str] = Column(String(50))
+    paid_up_capital: Optional[float] = Column(Float)
+    pan: Optional[str] = Column(String(50))
+    gstin: Optional[str] = Column(String(50))
+
+    # Financial / Tax Metrics
+    gstr1_revenue: Optional[float] = Column(Float)
+    gstr3b_revenue: Optional[float] = Column(Float)
+    audited_net_income: Optional[float] = Column(Float)
+    inventory: Optional[float] = Column(Float)
+    accounts_receivable: Optional[float] = Column(Float)
+    ebitda: Optional[float] = Column(Float)
+    long_term_debt: Optional[float] = Column(Float)
+
+    # Banking Behaviour Metrics
+    cheque_bounces: Optional[int] = Column(Integer)
+    ecs_returns: Optional[int] = Column(Integer)
+    od_utilization_percent: Optional[float] = Column(Float)
+    nach_obligation_percent: Optional[float] = Column(Float)
+
+    # Bureau Analysis
+    cibil_msme_rank: Optional[int] = Column(Integer)
+    asset_classification: Optional[str] = Column(String(100))
+    promoter_experience_years: Optional[float] = Column(Float)
+    contingent_liabilities: Optional[float] = Column(Float)
+    shareholding_pledge_percent: Optional[float] = Column(Float)
+
     # Research results
     research_summary: Optional[str] = Column(Text)
     research_data: Optional[dict] = Column(JSON)
+    risk_flags: Optional[dict] = Column(JSON)  # Will store list of flags
 
-    # Risk score
+    # Risk score output
+    loan_decision: Optional[str] = Column(String(50))  # APPROVE, REJECT, MANUAL_REVIEW, CONDITIONAL
     character_score: Optional[float] = Column(Float)
     capacity_score: Optional[float] = Column(Float)
     capital_score: Optional[float] = Column(Float)
     collateral_score: Optional[float] = Column(Float)
     conditions_score: Optional[float] = Column(Float)
     overall_credit_score: Optional[float] = Column(Float)
-    risk_category: Optional[str] = Column(String(20))   # Low | Medium | High
+    risk_category: Optional[str] = Column(String(50))
     score_breakdown: Optional[dict] = Column(JSON)
 
     # CAM report

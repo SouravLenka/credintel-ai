@@ -4,6 +4,7 @@ Loads environment variables and exposes typed settings.
 """
 import os
 from functools import lru_cache
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -19,8 +20,9 @@ class Settings(BaseSettings):
 
     # AI / LLM
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama3-70b-8192"
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
     OPENAI_API_KEY: str = ""
+    SERPAPI_API_KEY: str = ""
 
     # ChromaDB
     CHROMA_PERSIST_DIR: str = "./data/chroma"
@@ -36,8 +38,25 @@ class Settings(BaseSettings):
     # CORS
     ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "https://your-frontend.vercel.app"]
 
+    # Security
+    AUTH_ENABLED: bool = True
+
     # Logging
     LOG_LEVEL: str = "INFO"
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def normalize_debug(cls, value):
+        """Allow non-boolean env strings like 'release' without crashing."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {"1", "true", "yes", "on", "debug", "development"}:
+                return True
+            if lowered in {"0", "false", "no", "off", "release", "prod", "production"}:
+                return False
+        return False
 
     class Config:
         env_file = ".env"

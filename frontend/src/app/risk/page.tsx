@@ -11,16 +11,16 @@ import {
 import { BarChart3, TrendingUp, AlertTriangle, CheckCircle, Info } from "lucide-react";
 
 interface ScoreData {
-  character_score:    number;
-  capacity_score:     number;
-  capital_score:      number;
-  collateral_score:   number;
-  conditions_score:   number;
+  character_score: number;
+  capacity_score: number;
+  capital_score: number;
+  collateral_score: number;
+  conditions_score: number;
   overall_credit_score: number;
-  risk_category:      string;
-  explanation:        string[];
-  risk_alerts:        { type: string; message: string; severity: string }[];
-  indian_intel:       Record<string, string>;
+  risk_category: string;
+  explanation: string[];
+  risk_alerts: { type: string; message: string; severity: string }[];
+  indian_intel: Record<string, string>;
   score_breakdown: {
     ratios: {
       debt_to_revenue: number;
@@ -57,7 +57,46 @@ export default function RiskPage() {
     const stored = localStorage.getItem("credintel_score_data");
     if (stored) {
       try {
-        setScoreData(JSON.parse(stored));
+        const raw = JSON.parse(stored);
+        const breakdown = raw?.score_breakdown || {};
+        const overall =
+          Number(raw?.overall_credit_score ?? raw?.credit_score ?? 0) || 0;
+        const flags: string[] = Array.isArray(raw?.risk_flags) ? raw.risk_flags : [];
+        const loanDecision = String(raw?.loan_decision || "").toUpperCase();
+        const riskCategory =
+          overall >= 80 || loanDecision === "APPROVE"
+            ? "Low"
+            : overall >= 60 || loanDecision === "CONDITIONAL APPROVAL"
+              ? "Medium"
+              : "High";
+
+        setScoreData({
+          character_score: Number(breakdown?.qualitative ?? 0),
+          capacity_score: Number(breakdown?.financial_strength ?? 0),
+          capital_score: Number(breakdown?.tax_compliance ?? 0),
+          collateral_score: Number(breakdown?.bank_behavior ?? 0),
+          conditions_score: Number(breakdown?.credit_bureau ?? 0),
+          overall_credit_score: overall,
+          risk_category: riskCategory,
+          explanation: flags.length ? flags : ["No major risk flags detected"],
+          risk_alerts: flags.map((f) => ({
+            type: "risk_flag",
+            message: f,
+            severity: f.includes("HARD_REJECT") ? "high" : "medium",
+          })),
+          indian_intel: {
+            mca_director_check: "Not available",
+            gst_compliance: "Not available",
+            cibil_simulation: "Not available",
+          },
+          score_breakdown: {
+            ratios: {
+              debt_to_revenue: 0,
+              current_ratio: 1,
+              dscr: 1,
+            },
+          },
+        });
       } catch (e) {
         console.error("Failed to parse score data", e);
       }

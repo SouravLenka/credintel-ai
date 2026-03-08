@@ -1,21 +1,24 @@
-# ─── Python ──────────────────────────────────────────────
+# Python
 __pycache__/
 *.py[cod]
+*.pyd
 *.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .venv/
 venv/
 env/
 dist/
+build/
 
-# ─── Secrets & API Keys (NEVER commit these) ─────────────
+# Secrets and API keys (never commit)
 .env
 .env.*
-!.env.example          # allow the example template only
+!.env.example
 *.env.local
 *.env.production
 *.env.staging
-
-# Specific secret files
 backend/.env
 frontend/.env.local
 firebase-credentials.json
@@ -23,30 +26,45 @@ firebase-credentials.json
 *secret*.json
 *service-account*.json
 
-# ─── Data directories (large / ephemeral) ────────────────
+# Local databases and runtime artifacts
+*.db
+*.sqlite
+*.sqlite3
+backend/credintel.db
+backend/*.db
+backend/*.sqlite*
+
+# Data directories (large/ephemeral)
 backend/data/
 data/
 chroma_db/
 uploads/
 
-# ─── Node / Next.js ──────────────────────────────────────
+# Node / Next.js
 frontend/node_modules/
 node_modules/
 frontend/.next/
 .next/
 frontend/out/
 out/
+.turbo/
 
-# ─── Docker ──────────────────────────────────────────────
+# Coverage and reports
+coverage/
+.coverage
+htmlcov/
+
+# Docker and archives
 *.tar
 
-# ─── IDE ─────────────────────────────────────────────────
+# IDE and OS files
 .vscode/
 .idea/
 *.swp
+*.swo
 .DS_Store
 Thumbs.db
 
-# ─── Logs ────────────────────────────────────────────────
+# Logs
 *.log
 logs/

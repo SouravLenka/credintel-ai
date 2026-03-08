@@ -62,31 +62,50 @@ class DocumentIngestor:
 
     async def ingest(self, file_bytes: bytes, filename: str) -> dict[str, Any]:
         """
-        Full pipeline: save → parse → chunk → embed → store.
+        Full pipeline: save → route/parse (modular) → chunk → embed → store.
         Returns extracted signals and metadata.
         """
-        ext = Path(filename).suffix.lower()
-        if ext not in SUPPORTED_EXTENSIONS:
-            raise ValueError(f"Unsupported file type: {ext}")
+        from ingestion.file_router import route_file_ingestion
+        from extraction.llm_extractor import extract_corporate_data as normalize_extracted_data
 
         stored_path = self._save_file(file_bytes, filename)
         logger.info(f"[Ingestor] Saved {filename} → {stored_path}")
 
-        text = self._parse(stored_path, ext, file_bytes)
+        # Route to the new modular ingestion layer
+        result = await route_file_ingestion(file_bytes, filename, self.company_id)
+        text = result.get("text", "")
+        metadata = result.get("metadata", {})
+        
+        if result.get("status") == "error":
+            logger.error(f"[Ingestor] Ingestion failed for {filename}: {result.get('error')}")
+
         logger.info(f"[Ingestor] Extracted {len(text)} chars from {filename}")
 
+        # Structured data extraction for corporate fields
+        structured_data = await normalize_extracted_data(text, metadata.get("structured_data"))
+        logger.info(f"[Ingestor] Extracted {len(structured_data)} structured fields from {filename}")
+
+        # Keep existing RAG pipeline
         chunks = self._chunk_text(text)
         logger.info(f"[Ingestor] Created {len(chunks)} chunks")
 
-        self._embed_and_store(chunks, filename)
-        logger.info(f"[Ingestor] Embeddings stored in collection '{self.collection_name}'")
+        try:
+            self._embed_and_store(chunks, filename)
+            logger.info(f"[Ingestor] Embeddings stored in collection '{self.collection_name}'")
+        except Exception as e:
+            # Do not fail the entire processing pipeline when vector-store write fails.
+            logger.error(f"[Ingestor] Embedding store failed for {filename}: {e}")
 
+        # Map signals as before but augment with new extraction
         signals = self._extract_signals(text)
+        signals.update(structured_data)
+
         return {
             "stored_path": stored_path,
             "num_chunks": len(chunks),
             "signals": signals,
             "text_preview": text[:500],
+            "extracted_data": structured_data
         }
 
     def query(self, query_text: str, n_results: int = 5) -> list[str]:
@@ -109,58 +128,9 @@ class DocumentIngestor:
         dest.write_bytes(file_bytes)
         return str(dest)
 
-    def _parse(self, path: str, ext: str, raw_bytes: bytes) -> str:
-        if ext == ".pdf":
-            return self._parse_pdf(path)
-        elif ext in (".csv",):
-            return self._parse_csv(path)
-        elif ext in (".xlsx", ".xls"):
-            return self._parse_excel(path)
-        elif ext == ".txt":
-            return raw_bytes.decode("utf-8", errors="replace")
-        return ""
-
-    def _parse_pdf(self, path: str) -> str:
-        try:
-            import fitz  # PyMuPDF
-            doc = fitz.open(path)
-            pages = [page.get_text() for page in doc]
-            doc.close()
-            return "\n".join(pages)
-        except Exception as e:
-            logger.warning(f"[Ingestor] PyMuPDF failed: {e}. Trying unstructured.")
-            return self._parse_pdf_unstructured(path)
-
-    def _parse_pdf_unstructured(self, path: str) -> str:
-        try:
-            from unstructured.partition.pdf import partition_pdf
-            elements = partition_pdf(filename=path)
-            return "\n".join(str(el) for el in elements)
-        except Exception as e:
-            logger.error(f"[Ingestor] Unstructured PDF parse failed: {e}")
-            return ""
-
-    def _parse_csv(self, path: str) -> str:
-        try:
-            df = pd.read_csv(path)
-            return df.to_string(index=False)
-        except Exception as e:
-            logger.error(f"[Ingestor] CSV parse failed: {e}")
-            return ""
-
-    def _parse_excel(self, path: str) -> str:
-        try:
-            frames = pd.read_excel(path, sheet_name=None)
-            texts = []
-            for sheet, df in frames.items():
-                texts.append(f"--- Sheet: {sheet} ---\n{df.to_string(index=False)}")
-            return "\n\n".join(texts)
-        except Exception as e:
-            logger.error(f"[Ingestor] Excel parse failed: {e}")
-            return ""
-
     def _chunk_text(self, text: str, chunk_size: int = 800, overlap: int = 100) -> list[str]:
         """Simple sliding-window chunker."""
+        if not text: return []
         words = text.split()
         chunks: list[str] = []
         start = 0

@@ -13,6 +13,7 @@ Uses DuckDuckGo search (no API key required) + LLM summarisation.
 from __future__ import annotations
 
 import asyncio
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -102,6 +103,29 @@ class ResearchAgent:
                 self._llm = _MockLLM()
         return self._llm
 
+    def _rotate_llm_model(self) -> None:
+        """Switch to a fallback Groq model when the current one is unavailable."""
+        candidates = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+        ]
+        try:
+            from langchain_groq import ChatGroq
+            for model_name in candidates:
+                if model_name == settings.GROQ_MODEL:
+                    continue
+                try:
+                    self._llm = ChatGroq(
+                        model_name=model_name,
+                        api_key=settings.GROQ_API_KEY,
+                        temperature=0.1,
+                    )
+                    return
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
     async def research(self, company_name: str) -> ResearchReport:
         """Run all research categories concurrently and return a full report."""
         logger.info(f"[ResearchAgent] Starting research for: {company_name}")
@@ -165,8 +189,22 @@ class ResearchAgent:
 
     async def _ddg_search(self, query: str, max_results: int = 5) -> list[SearchResult]:
         """DuckDuckGo Instant Answer API search (no key needed)."""
+        serpapi_key = (settings.SERPAPI_API_KEY or "").strip()
+        if serpapi_key:
+            serpapi_results = await self._serpapi_search(query, max_results=max_results)
+            if serpapi_results:
+                return serpapi_results
+
         try:
-            from duckduckgo_search import DDGS
+            try:
+                from ddgs import DDGS  # type: ignore[import-not-found]
+            except Exception:
+                warnings.filterwarnings(
+                    "ignore",
+                    message="This package \\(`duckduckgo_search`\\) has been renamed to `ddgs`!.*",
+                )
+                from duckduckgo_search import DDGS
+
             with DDGS() as ddgs:
                 hits = list(ddgs.text(query, max_results=max_results))
             return [
@@ -179,6 +217,38 @@ class ResearchAgent:
             ]
         except Exception as e:
             logger.warning(f"[ResearchAgent] DDG search failed for '{query}': {e}")
+            return []
+
+    async def _serpapi_search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+        """SerpAPI-backed Google search when API key is available."""
+        try:
+            import requests
+
+            params = {
+                "q": query,
+                "api_key": settings.SERPAPI_API_KEY,
+                "engine": "google",
+                "num": max_results,
+            }
+            response = await asyncio.to_thread(
+                requests.get,
+                "https://serpapi.com/search.json",
+                params,
+                timeout=15,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            organic = payload.get("organic_results", [])
+            return [
+                SearchResult(
+                    title=item.get("title", ""),
+                    url=item.get("link", ""),
+                    snippet=item.get("snippet", ""),
+                )
+                for item in organic[:max_results]
+            ]
+        except Exception as e:
+            logger.warning(f"[ResearchAgent] SerpAPI search failed for '{query}': {e}")
             return []
 
     async def _summarise(
@@ -208,6 +278,16 @@ class ResearchAgent:
                 return response.content.strip()
             return str(response).strip()
         except Exception as e:
+            if "model_decommissioned" in str(e):
+                self._rotate_llm_model()
+                try:
+                    llm = self._get_llm()
+                    response = await asyncio.to_thread(llm.invoke, prompt)
+                    if hasattr(response, "content"):
+                        return response.content.strip()
+                    return str(response).strip()
+                except Exception:
+                    pass
             logger.error(f"[ResearchAgent] LLM summarise failed: {e}")
             return snippets[:500]
 

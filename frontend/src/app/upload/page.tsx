@@ -6,6 +6,7 @@ import Navbar from "@/components/Navbar";
 import Sidebar from "@/components/Sidebar";
 import { useDropzone } from "react-dropzone";
 import { uploadDocuments } from "@/lib/api";
+import axios from "axios";
 import { Upload, File, X, CheckCircle, AlertCircle, Loader2, Building2 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -52,6 +53,17 @@ export default function UploadPage() {
   const removeFile = (idx: number) =>
     setFiles((prev) => prev.filter((_, i) => i !== idx));
 
+  const describeError = (error: unknown): string => {
+    if (!axios.isAxiosError(error)) return "Upload failed due to unexpected error.";
+    const status = error.response?.status;
+    const detail =
+      (error.response?.data as any)?.detail ||
+      error.response?.statusText ||
+      error.message;
+    if (!status) return "Network error. Check backend URL/port and CORS.";
+    return `Upload failed (${status}): ${detail}`;
+  };
+
   const handleUpload = async () => {
     if (!companyName.trim()) { toast.error("Enter a company name first."); return; }
     if (files.length === 0)  { toast.error("Add at least one file.");       return; }
@@ -80,8 +92,9 @@ export default function UploadPage() {
       localStorage.setItem("credintel_company_id",   result.company_id);
       localStorage.setItem("credintel_company_name", companyName);
     } catch (e: unknown) {
-      toast.error("Upload failed. Check backend connection.");
-      setFiles((prev) => prev.map((f) => ({ ...f, status: "error", error: String(e) })));
+      const msg = describeError(e);
+      toast.error(msg);
+      setFiles((prev) => prev.map((f) => ({ ...f, status: "error", error: msg })));
     } finally {
       setUploading(false);
     }

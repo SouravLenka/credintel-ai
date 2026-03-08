@@ -2,9 +2,33 @@
 import axios from "axios";
 import { getIdToken } from "./firebase";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const DEFAULT_BASE_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-const api = axios.create({ baseURL: BASE_URL });
+function getBaseUrl() {
+  if (typeof window === "undefined") return DEFAULT_BASE_URL;
+  return localStorage.getItem("credintel_backend_url") || DEFAULT_BASE_URL;
+}
+
+function getCandidateBases() {
+  const primary = getBaseUrl().replace(/\/+$/, "");
+  const swapHost = primary.includes("127.0.0.1")
+    ? primary.replace("127.0.0.1", "localhost")
+    : primary.includes("localhost")
+      ? primary.replace("localhost", "127.0.0.1")
+      : primary;
+
+  return Array.from(
+    new Set([
+      primary,
+      swapHost,
+      "http://127.0.0.1:8000",
+      "http://localhost:8000",
+    ]),
+  );
+}
+
+const api = axios.create({ baseURL: DEFAULT_BASE_URL });
 
 // Attach Firebase auth token to every request
 api.interceptors.request.use(async (config) => {
@@ -15,17 +39,43 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
+// Retry once on host mismatch network errors (localhost <-> 127.0.0.1).
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const config = error?.config;
+    const isNetworkError = error?.code === "ERR_NETWORK";
+    const alreadyRetried = Boolean((config as any)?._hostRetryDone);
+
+    if (!config || !isNetworkError || alreadyRetried) {
+      return Promise.reject(error);
+    }
+
+    const currentBase = (config.baseURL || getBaseUrl()) as string;
+    let altBase = "";
+    if (currentBase.includes("127.0.0.1")) altBase = currentBase.replace("127.0.0.1", "localhost");
+    if (currentBase.includes("localhost")) altBase = currentBase.replace("localhost", "127.0.0.1");
+
+    if (!altBase || altBase === currentBase) {
+      return Promise.reject(error);
+    }
+
+    (config as any)._hostRetryDone = true;
+    config.baseURL = altBase;
+    return api.request(config);
+  },
+);
+
 // ── Document Upload ───────────────────────────────────────────────────────────
 
 export interface UploadResponse {
-  company_id:  string;
+  company_id: string;
   company_name: string;
   documents: {
     filename: string;
-    status:   string;
+    status: string;
+    error?: string;
     num_chunks?: number;
-    signals?:   Record<string, unknown>;
-    error?:     string;
   }[];
 }
 
@@ -38,76 +88,145 @@ export async function uploadDocuments(
   form.append("company_name", companyName);
   form.append("company_id", companyId);
   files.forEach((f) => form.append("files", f));
-  const { data } = await api.post<UploadResponse>("/upload-documents", form, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
-  return data;
+
+  const token = await getIdToken().catch(() => "");
+  const headers = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    "Content-Type": "multipart/form-data",
+  };
+
+  const paths = ["/api/upload", "/upload-documents"];
+  let lastError: unknown;
+
+  for (const base of getCandidateBases()) {
+    for (const path of paths) {
+      try {
+        const { data } = await axios.post<UploadResponse>(`${base}${path}`, form, {
+          headers,
+          params: { company_name: companyName },
+          timeout: 60000,
+        });
+        return data;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 // ── Company Analysis ──────────────────────────────────────────────────────────
 
 export interface AnalysisResponse {
-  analysis_id:  string;
-  company_id:   string;
-  company_name: string;
-  research:     Record<string, unknown>;
-  rag_summary:  Record<string, string>;
-  score: {
-    character_score:    number;
-    capacity_score:     number;
-    capital_score:      number;
-    collateral_score:   number;
-    conditions_score:   number;
-    overall_credit_score: number;
-    risk_category:      string;
-    score_breakdown:    Record<string, unknown>;
-  };
+  company_id: string;
+  processed_count: number;
+  analysis_id: string;
+  extracted_fields: string[];
 }
 
-export async function analyzeCompany(
-  companyName: string,
-  companyId:   string,
+export async function processDocuments(
+  companyId: string,
 ): Promise<AnalysisResponse> {
-  const { data } = await api.post<AnalysisResponse>("/analyze-company", {
-    company_name:      companyName,
-    company_id:        companyId,
-    include_research:  true,
-    include_rag:       true,
-  });
-  return data;
+  const token = await getIdToken().catch(() => "");
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+  let lastError: unknown;
+  for (const base of getCandidateBases()) {
+    try {
+      const { data } = await axios.post<AnalysisResponse>(
+        `${base}/api/process?company_id=${companyId}`,
+        null,
+        { headers, timeout: 30000 },
+      );
+      return data;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
+
+export async function analyzeCompany(analysisId: string): Promise<any> {
+  const token = await getIdToken().catch(() => "");
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+  let lastError: unknown;
+  for (const base of getCandidateBases()) {
+    try {
+      const { data } = await axios.post(
+        `${base}/api/analyze?analysis_id=${analysisId}`,
+        null,
+        { headers, timeout: 60000 },
+      );
+      return data;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
+
+export interface ResearchResponse {
+  company: string;
+  research: {
+    company_name: string;
+    news_summary: string;
+    promoter_summary: string;
+    sector_summary: string;
+    litigation_summary: string;
+    regulatory_summary: string;
+    risk_flags: string[];
+  };
+  risk_flags: string[];
+  pipeline: string[];
+}
+
+export async function runResearch(companyName: string): Promise<ResearchResponse> {
+  const token = await getIdToken().catch(() => "");
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const candidates = ["/api/research", "/research"];
+
+  let lastError: unknown;
+  for (const base of getCandidateBases()) {
+    for (const path of candidates) {
+      try {
+        const { data } = await axios.post<ResearchResponse>(
+          `${base}${path}`,
+          { company_name: companyName },
+          { headers: authHeaders, timeout: 30000 },
+        );
+        return data;
+      } catch (err: any) {
+        lastError = err;
+        const status = err?.response?.status;
+        if (status && status !== 404) break;
+      }
+    }
+  }
+  throw lastError;
 }
 
 // ── Generate Report ───────────────────────────────────────────────────────────
 
 export interface ReportResponse {
   analysis_id: string;
-  pdf_url:     string;
-  docx_url:    string;
+  pdf_url: string;
+  docx_url: string;
 }
 
 export async function generateReport(
-  companyName:     string,
-  companyId:       string,
-  analysisId:      string,
-  researchData:    Record<string, unknown>,
-  scoreData:       Record<string, unknown>,
-  financialSignals?: Record<string, unknown>,
-): Promise<ReportResponse> {
-  const { data } = await api.post<ReportResponse>("/generate-report", {
-    company_name:     companyName,
-    company_id:       companyId,
-    analysis_id:      analysisId,
-    research_data:    researchData,
-    score_data:       scoreData,
-    financial_signals: financialSignals,
-  });
-  return data;
+  companyId: string,
+  format: "pdf" | "docx" = "pdf",
+): Promise<void> {
+  const base = getCandidateBases()[0];
+  window.open(`${base}/api/cam/${companyId}?format=${format}`, "_blank");
 }
 
 // ── Risk Score ────────────────────────────────────────────────────────────────
 
 export async function getRiskScore(companyId: string) {
-  const { data } = await api.get(`/risk-score/${companyId}`);
+  const { data } = await api.get(`/api/cam/${companyId}`); // Repurposed for now or keep separate
   return data;
 }
 

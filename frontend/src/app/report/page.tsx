@@ -12,11 +12,14 @@ export default function ReportPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [generating, setGenerating] = useState(false);
-  const [report,     setReport]     = useState<{ pdf_url: string; docx_url: string } | null>(null);
+  const [report, setReport] = useState<{ pdf_url: string; docx_url: string } | null>(null);
   const [companyName, setCompanyName] = useState("Company");
   const [hasData,     setHasData]     = useState(false);
 
-  const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+  const BACKEND =
+    (typeof window !== "undefined" && localStorage.getItem("credintel_backend_url")) ||
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    "http://localhost:8000";
 
   useEffect(() => {
     if (!loading && !user) { router.push("/"); return; }
@@ -26,20 +29,18 @@ export default function ReportPage() {
   }, [user, loading, router]);
 
   const handleGenerate = async () => {
-    const analysisId   = localStorage.getItem("credintel_analysis_id") || "no-id";
-    const companyId    = localStorage.getItem("credintel_company_id")   || "no-id";
-    const researchRaw  = localStorage.getItem("credintel_research_data");
-    const scoreRaw     = localStorage.getItem("credintel_score_data");
+    const companyId = localStorage.getItem("credintel_company_id") || "";
+    const scoreRaw = localStorage.getItem("credintel_score_data");
 
-    if (!researchRaw || !scoreRaw) { toast.error("Run analysis first."); return; }
+    if (!companyId || !scoreRaw) { toast.error("Run analysis first."); return; }
 
     setGenerating(true);
     try {
-      const result = await generateReport(
-        companyName, companyId, analysisId,
-        JSON.parse(researchRaw), JSON.parse(scoreRaw),
-      );
-      setReport(result);
+      await generateReport(companyId, "pdf");
+      setReport({
+        pdf_url: `/api/cam/${companyId}?format=pdf`,
+        docx_url: `/api/cam/${companyId}?format=docx`,
+      });
       toast.success("CAM report generated!");
     } catch (e) {
       toast.error("Report generation failed. Check backend connection.");
