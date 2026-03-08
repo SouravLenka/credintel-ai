@@ -6,9 +6,12 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc g++ libffi-dev libssl-dev \
     poppler-utils tesseract-ocr libgl1 \
+    libmagic1 libxml2 libxslt1.1 \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PIP_NO_CACHE_DIR=1
+ENV PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 # Install Python dependencies
 COPY backend/requirements.txt .
@@ -17,8 +20,8 @@ RUN pip install -r requirements.txt
 # Copy backend code
 COPY backend/ .
 
-# Create directories
-RUN mkdir -p /tmp/uploads /tmp/chroma /tmp/reports
+# Create app runtime directories (match backend config defaults)
+RUN mkdir -p /app/data/uploads /app/data/chroma /app/data/reports
 
 ENV PORT=8000
 
