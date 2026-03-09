@@ -31,6 +31,7 @@ firebase-credentials.json
 *.sqlite
 *.sqlite3
 backend/credintel.db
+backend/credasys.db
 backend/*.db
 backend/*.sqlite*
 
@@ -48,6 +49,8 @@ frontend/.next/
 frontend/out/
 out/
 .turbo/
+.vercel/
+frontend/.vercel/
 
 # Coverage and reports
 coverage/
@@ -68,3 +71,10 @@ Thumbs.db
 # Logs
 *.log
 logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local temp / generated reference assets
+tmp_ref/
