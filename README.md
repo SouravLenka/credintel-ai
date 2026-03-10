@@ -4,7 +4,7 @@
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -78,7 +78,7 @@ App: http://localhost:3000
 
 ---
 
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 credasys/
@@ -137,7 +137,7 @@ credasys/
 
 ---
 
-## 🧠 AI Pipeline
+## AI Pipeline
 
 ```
 Documents → PyMuPDF/Unstructured → Text → Chunking
@@ -155,7 +155,7 @@ Documents → PyMuPDF/Unstructured → Text → Chunking
 
 ---
 
-## 🚢 Deployment
+## Deployment
 
 ### Backend → Railway
 
@@ -176,7 +176,7 @@ Documents → PyMuPDF/Unstructured → Text → Chunking
 
 ---
 
-## 📦 Tech Stack
+## Tech Stack
 
 | Layer     | Technology                                        |
 | --------- | ------------------------------------------------- |
@@ -191,17 +191,16 @@ Documents → PyMuPDF/Unstructured → Text → Chunking
 
 ---
 
-## ⚡ Features
+## Features
 
-- 📂 **Document Ingestion** — Upload PDFs, CSVs, Excel, TXT
-- 🔍 **Research Agent** — Automated company news, promoter, litigation research
-- 📊 **Five-Cs Scoring** — Explainable Character / Capacity / Capital / Collateral / Conditions
-- 📋 **CAM Generation** — Professional PDF + DOCX Credit Appraisal Memo
-- 🔐 **Firebase Auth** — Google Sign-In
-- 📈 **Risk Visualization** — Gauge, bar, radar charts
+- **Document Ingestion** — Upload PDFs, CSVs, Excel, TXT
+- **Research Agent** — Automated company news, promoter, litigation research
+- **Five-Cs Scoring** — Explainable Character / Capacity / Capital / Collateral / Conditions
+- **CAM Generation** — Professional PDF + DOCX Credit Appraisal Memo
+- **Firebase Auth** — Google Sign-In
+- **Risk Visualization** — Gauge, bar, radar charts
 
 ---
 
-_Built for hackathon. Production-ready architecture._
 
 
